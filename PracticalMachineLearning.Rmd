@@ -1,0 +1,185 @@
+---
+title: "Practice Machine Learning"
+author: "msagastya"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Overview
+This is an R Markdown document of the final assignment of the Practical Machine Learning of Data Science Specialization.
+The goal of this project is to predict assignment writeup. This is the "classe" variable in the training set. I may use any of the other variables to predict with. I have created a report describing how I built my model, how I used cross validation, what I think the expected out of sample error is. I also used my prediction model to predict 20 different test cases.
+
+# Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: 
+[http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har]
+ (see the section on the Weight Lifting Exercise Dataset).
+
+# Data
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+
+The data for this project come from this source: 
+http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har
+
+```{r}
+rm(list=ls())                # free up memory for download of the data sets
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## First Download the required libraries that are going to be used in our program
+
+```{r}
+set.seed(1967)
+library(knitr)
+library(lattice)
+library(ggplot2)
+# install.packages("caret", dependencies = TRUE)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(corrplot)
+library(data.table)
+library(plotly)
+library(RColorBrewer)
+library(rattle)
+library(randomForest)
+library(gbm)
+```
+
+## Loading the Dataset
+```{r}
+training_data <- read.csv("pml-training.csv")
+testing_data <- read.csv("pml-testing.csv")
+```
+
+## Looking into the data (Data PreProcessing)
+```{r}
+dim(training_data)
+dim(testing_data)
+```
+
+Now from the `training_data`, the dataset is partitioned into two datasets as `train_set`(70% of data for training purpose) and `test_set`(30% for testing purpose) of the "classe" variable.
+
+```{r}
+data_partition <- createDataPartition(training_data$classe, p = 0.70, list = FALSE)
+train_set <- training_data[data_partition ,]
+test_set  <- training_data[-data_partition,]
+dim(train_set)
+dim(test_set)
+```
+
+Now as we are looking the data in being divided into both the sets.
+Now both the dataset has 160 variables.
+We can remove the near zero values.
+
+```{r}
+nzv_var <- nearZeroVar(train_set)
+train_set <- train_set[,-nzv_var]
+test_set  <- test_set [,-nzv_var]
+dim(train_set)
+dim(test_set)
+```
+
+Here we can remove some more variables which are carrying NA values with thresholg of more than 95%.
+
+```{r}
+na_var <- sapply(train_set, function(x) mean(is.na(x))) > 0.95
+train_set <- train_set[ , na_var == FALSE]
+test_set  <- test_set [ , na_var == FALSE]
+dim(train_set)
+dim(test_set)
+```
+
+In the dataset, initial 5 variables are identification variables, so we can remove those variables too.
+
+```{r}
+train_set <- train_set[ , -(1:5)]
+test_set  <- test_set [ , -(1:5)]
+dim(train_set)
+dim(test_set)
+```
+
+Now, create a correlation matrix between the variables to get the information about the data.
+Here we eliminated the variables from 160 to 54.
+```{r}
+corr_matrix <- cor(train_set[ , -54])
+corrplot(corr_matrix, order = "FPC", method = "circle", type = "lower",
+         tl.cex = 0.6, tl.col = rgb(0, 0, 0))
+```
+
+# Choose an appropriate Model
+
+We perform our modelling using 3 models
+1. Decision Tree Model
+2. Generalized Boosted Model
+3. Random Forests
+
+### 1. Decision Tree Model
+```{r}
+set.seed(1967)
+fit_DT <- rpart(classe ~ ., data = train_set, method="class")
+fancyRpartPlot(fit_DT)
+
+predict_DT <- predict(fit_DT, newdata = test_set, type="class")
+conf_matrix_DT <- confusionMatrix(table(predict_DT, test_set$classe))
+conf_matrix_DT
+
+plot(conf_matrix_DT$table, col = conf_matrix_DT$byClass, 
+     main = paste("Decision Tree Model: Predictive Accuracy =",
+                  round(conf_matrix_DT$overall['Accuracy'], 4)))
+```
+
+### 2. Generalized Boosted Model(GBM)
+```{r}
+set.seed(1967)
+ctrl_GBM <- trainControl(method = "repeatedcv", number = 5, repeats = 2)
+fit_GBM  <- train(classe ~ ., data = train_set, method = "gbm",
+                  trControl = ctrl_GBM, verbose = FALSE)
+fit_GBM$finalModel
+predict_GBM <- predict(fit_GBM, newdata = test_set)
+conf_matrix_GBM <- confusionMatrix(table(predict_GBM, test_set$classe))
+conf_matrix_GBM
+```
+
+### 3. Random Forest
+```{r}
+set.seed(1967)
+ctrl_RF <- trainControl(method = "repeatedcv", number = 5, repeats = 2)
+fit_RF  <- train(classe ~ ., data = train_set, method = "rf",
+                 trControl = ctrl_RF, verbose = FALSE)
+fit_RF$finalModel
+predict_RF <- predict(fit_RF, newdata = test_set)
+conf_matrix_RF <- confusionMatrix(table(predict_RF, test_set$classe))
+conf_matrix_RF
+```
+
+# Evaluate the Model (Fitting models)
+## Summary
+
+Accuracy:
+    * Decision Tree Model : 74.58%%
+    * Generalized Boosted Model : 98.83%
+    * Random Forest : 99.86%
+    
+The kappa statistic The kappa statistic (labeled Kappa in the previous output) adjusts accuracy by accounting for the possibility of a correct prediction by chance alone. Kappa values range to a maximum value of 1, which indicates perfect agreement between the model’s predictions and the true values—a rare occurrence. Values less than one indicate imperfect agreement.
+
+Depending on how your model is to be used, the interpretation of the kappa statistic might vary. One common interpretation is shown as follows: • Poor agreement = Less than 0.20 • Fair agreement = 0.20 to 0.40 • Moderate agreement = 0.40 to 0.60 • Good agreement = 0.60 to 0.80 • Very good agreement = 0.80 to 1.00
+
+Checking if there are anything to gain from increasing the number of boosting iterations.
+
+```{r}
+plot(fit_RF)
+print(fit_RF$bestTune)
+```
+
+# Make Predictions Deciding to predict with this model.
+The Random Forest model is selected and applied to make predictions on the 20 data points from the original testing dataset (testing_data).
+```{r}
+cat("Predictions: ", paste(predict(fit_RF, testing_data)))
+```
